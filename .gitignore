@@ -1,2 +1,3 @@
-*/node_modules/
-*/store/
+node_modules/
+store/
+.DS_Store

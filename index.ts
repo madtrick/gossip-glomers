@@ -3,6 +3,8 @@ enum MessageType {
   InitOk = 'init_ok',
   Echo = 'echo',
   EchoOk = 'echo_ok',
+  Generate = 'generate',
+  GenerateOk = 'generate_ok'
 }
 
 interface MessageBodyInit {
@@ -15,6 +17,11 @@ interface MessageBodyEcho {
   type: MessageType.Echo
   msg_id: number
   echo: string
+}
+
+interface MessageBodyGenerate {
+  type: MessageType.Generate
+  msg_id: number
 }
 
 interface Message<B> {
@@ -48,7 +55,7 @@ function send(data: any): void {
 }
 
 function handle(
-  message: Message<MessageBodyInit | MessageBodyEcho>,
+  message: Message<MessageBodyInit | MessageBodyEcho | MessageBodyGenerate>,
   state?: State
 ): State | undefined {
   log(['recv', message])
@@ -81,6 +88,20 @@ function handle(
 
       return state
 
+    case MessageType.Generate:
+      log('Handle generate')
+      assertState(state)
+      send({
+        dest: message.src,
+        src: state.node.id,
+        body: {
+          type: MessageType.GenerateOk,
+          in_reply_to: message.body.msg_id,
+          id: Math.random()
+        }
+      })
+      return state
+
     default:
       log('Unknown message')
       return state
@@ -101,6 +122,11 @@ let state: State | undefined
 process.stdin.resume()
 process.stdin.on('data', (data) => {
   if (data) {
-    state = handle(JSON.parse(data.toString()), state)
+    const message = data.toString().trim()
+    log(['recv(raw)', data])
+
+    if (message.length > 0) {
+      state = handle(JSON.parse(data.toString()), state)
+    }
   }
 })
