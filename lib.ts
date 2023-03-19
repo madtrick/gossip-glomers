@@ -1,49 +1,84 @@
-enum MessageType {
+export enum MessageType {
   Init = 'init',
   InitOk = 'init_ok',
   Echo = 'echo',
   EchoOk = 'echo_ok',
   Generate = 'generate',
-  GenerateOk = 'generate_ok'
+  GenerateOk = 'generate_ok',
+  Broadcast = 'broadcast',
+  BroadcastOk = 'broadcast_ok',
+  Read = 'read',
+  ReadOk = 'read_ok',
+  Topology = 'topology',
+  TopologyOk = 'topology_ok',
+  Deliver = 'deliver',
 }
 
-interface MessageBodyInit {
+type MaelstromNodeId = string
+type MessageId = number
+
+export interface MessageBodyInit {
   type: MessageType.Init
-  msg_id: string
-  node_id: string
+  msg_id: MessageId
+  node_id: MaelstromNodeId
 }
 
-interface MessageBodyEcho {
+export interface MessageBodyEcho {
   type: MessageType.Echo
-  msg_id: number
+  msg_id: MessageId
   echo: string
 }
 
-interface MessageBodyGenerate {
+export interface MessageBodyGenerate {
   type: MessageType.Generate
-  msg_id: number
+  msg_id: MessageId
 }
 
-interface Message<B> {
+export interface MessageBodyTopology {
+  type: MessageType.Topology
+  msg_id: MessageId
+  topology: Record<MaelstromNodeId, Array<MaelstromNodeId>>
+}
+
+export interface MessageBodyBroadcast {
+  type: MessageType.Broadcast
+  msg_id: MessageId
+  message: number
+}
+
+export interface MessageBodyRead {
+  type: MessageType.Read
+  msg_id: MessageId
+  message: number
+}
+
+export interface MessageBodyDeliver {
+  type: MessageType.Deliver
+  message: number
+}
+
+export interface Message<B> {
   src: string
   dest: string
   body: B
 }
 
-const log = (data: any) =>
+export const log = (data: unknown) =>
   console.error(`[${Date.now()}]: ${JSON.stringify(data)}`)
 
-function send(data: any): void {
+export function send(data: unknown): void {
   log(['send', data])
   console.log(JSON.stringify(data))
 }
 
-interface MaelstromNode {
+export interface MaelstromNode {
   id: string
 }
 
-interface State {
+export interface State {
   node: MaelstromNode
+  broadcast: {
+    neighbours: Array<MaelstromNodeId>
+    messages: Array<number>
+  }
 }
-
-let state: State | undefined
