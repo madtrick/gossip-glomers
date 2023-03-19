@@ -1,37 +1,3 @@
-enum MessageType {
-  Init = 'init',
-  InitOk = 'init_ok',
-  Echo = 'echo',
-  EchoOk = 'echo_ok',
-  Generate = 'generate',
-  GenerateOk = 'generate_ok'
-}
-
-interface MessageBodyInit {
-  type: MessageType.Init
-  msg_id: string
-  node_id: string
-}
-
-interface MessageBodyEcho {
-  type: MessageType.Echo
-  msg_id: number
-  echo: string
-}
-
-interface MessageBodyGenerate {
-  type: MessageType.Generate
-  msg_id: number
-}
-
-interface Message<B> {
-  src: string
-  dest: string
-  body: B
-}
-
-const log = (data: any) =>
-  console.error(`[${Date.now()}]: ${JSON.stringify(data)}`)
 
 function handleInit(message: Message<MessageBodyInit>): MaelstromNode {
   const node = { id: message.body.node_id }
@@ -47,11 +13,6 @@ function assertState(data: unknown): asserts data is State {
   if (!('node' in data)) {
     throw new Error('Invalid state')
   }
-}
-
-function send(data: any): void {
-  log(['send', data])
-  console.log(JSON.stringify(data))
 }
 
 function handle(
@@ -107,16 +68,6 @@ function handle(
       return state
   }
 }
-
-interface MaelstromNode {
-  id: string
-}
-
-interface State {
-  node: MaelstromNode
-}
-
-let state: State | undefined
 
 // stdin is paused by default
 process.stdin.resume()
