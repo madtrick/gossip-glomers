@@ -1,8 +1,10 @@
 import {
   log,
+  MaelstromNodeId,
   Message,
   MessageBodyBroadcast,
   MessageBodyDeliver,
+  MessageBodyDeliverOk,
   MessageBodyEcho,
   MessageBodyGenerate,
   MessageBodyInit,
@@ -23,7 +25,12 @@ function handleInit(message: Message<MessageBodyInit>): State {
       in_reply_to: message.body.msg_id,
     },
   })
-  return { node, broadcast: { messages: [], neighbours: [] } }
+  return {
+    node,
+    nextMessageId: 0,
+    outstandingMessages: [],
+    broadcast: { messages: [], neighbours: [] },
+  }
 }
 
 function handleEcho(state: State, message: Message<MessageBodyEcho>): State {
@@ -58,6 +65,34 @@ function handleGenerate(
   return state
 }
 
+function deliver(state: State, dest: MaelstromNodeId, value: number): void {
+  const msgId = state.nextMessageId
+  state.nextMessageId += 1
+
+  const message: Message<MessageBodyDeliver> = {
+    src: state.node.id,
+    dest,
+    body: {
+      type: MessageType.Deliver,
+      message: value,
+      msg_id: msgId,
+    },
+  }
+
+  const retriedDelivery = () => {
+    state.outstandingMessages[message.body.msg_id] = {
+      timeout: setTimeout(() => {
+        retriedDelivery()
+        // TODO: use exponential backoff here
+      }, 1000),
+    }
+
+    send(message)
+  }
+
+  retriedDelivery()
+}
+
 function handleBroadcast(
   state: State,
   message: Message<MessageBodyBroadcast>
@@ -66,14 +101,7 @@ function handleBroadcast(
 
   state.broadcast.messages.push(messageNumber)
   state.broadcast.neighbours.forEach((neighbourId) => {
-    send({
-      src: state.node.id,
-      dest: neighbourId,
-      body: {
-        type: MessageType.Deliver,
-        message: messageNumber,
-      },
-    })
+    deliver(state, neighbourId, messageNumber)
   })
 
   send({
@@ -131,21 +159,34 @@ function handleDeliver(
 ): State {
   const { message: messageNumber } = message.body
 
+  // TODO: handle re-delivery of the same message
   state.broadcast.messages.push(messageNumber)
   state.broadcast.neighbours.forEach((neighbourId) => {
     if (neighbourId === message.src) {
       return
     }
 
-    send({
-      src: state.node.id,
-      dest: neighbourId,
-      body: {
-        type: MessageType.Deliver,
-        message: messageNumber,
-      },
-    })
+    deliver(state, neighbourId, messageNumber)
   })
+
+  send({
+    src: state.node.id,
+    dest: message.src,
+    body: {
+      type: MessageType.DeliverOk,
+      in_reply_to: message.body.msg_id,
+    },
+  })
+
+  return state
+}
+
+function handleDeliverOk(
+  state: State,
+  message: Message<MessageBodyDeliverOk>
+): State {
+  clearTimeout(state.outstandingMessages[message.body.in_reply_to].timeout)
+  delete state.outstandingMessages[message.body.in_reply_to]
 
   return state
 }
@@ -169,6 +210,7 @@ function handle(
     | MessageBodyRead
     | MessageBodyTopology
     | MessageBodyDeliver
+    | MessageBodyDeliverOk
   >,
   state?: State
 ): State | undefined {
@@ -212,6 +254,11 @@ function handle(
       assertState(state)
 
       return handleDeliver(state, message as Message<MessageBodyDeliver>)
+    case MessageType.DeliverOk:
+      log('Handle deliver ok')
+      assertState(state)
+
+      return handleDeliverOk(state, message as Message<MessageBodyDeliverOk>)
 
     default:
       log('Unknown message')

@@ -12,10 +12,11 @@ export enum MessageType {
   Topology = 'topology',
   TopologyOk = 'topology_ok',
   Deliver = 'deliver',
+  DeliverOk = 'deliver_ok',
 }
 
-type MaelstromNodeId = string
-type MessageId = number
+export type MaelstromNodeId = string
+export type MessageId = number
 
 export interface MessageBodyInit {
   type: MessageType.Init
@@ -54,7 +55,13 @@ export interface MessageBodyRead {
 
 export interface MessageBodyDeliver {
   type: MessageType.Deliver
+  msg_id: MessageId
   message: number
+}
+
+export interface MessageBodyDeliverOk {
+  type: MessageType.DeliverOk
+  in_reply_to: MessageId
 }
 
 export interface Message<B> {
@@ -63,8 +70,14 @@ export interface Message<B> {
   body: B
 }
 
+type MessageTimeout = NodeJS.Timeout
+
+export interface OutstandingMessage {
+  timeout: MessageTimeout
+}
+
 export const log = (data: unknown) =>
-  console.error(`[${Date.now()}]: ${JSON.stringify(data)}`)
+  console.error(`[${new Date().toISOString()}]: ${JSON.stringify(data)}`)
 
 export function send(data: unknown): void {
   log(['send', data])
@@ -77,6 +90,8 @@ export interface MaelstromNode {
 
 export interface State {
   node: MaelstromNode
+  nextMessageId: MessageId
+  outstandingMessages: Record<MessageId, OutstandingMessage>
   broadcast: {
     neighbours: Array<MaelstromNodeId>
     messages: Array<number>
