@@ -22,6 +22,7 @@ export interface MessageBodyInit {
   type: MessageType.Init
   msg_id: MessageId
   node_id: MaelstromNodeId
+  node_ids: Array<MaelstromNodeId>
 }
 
 export interface MessageBodyEcho {
@@ -57,6 +58,8 @@ export interface MessageBodyDeliver {
   type: MessageType.Deliver
   msg_id: MessageId
   message: number
+  broadcast_to: MaelstromNodeId
+  broadcast_message_id: MessageId
 }
 
 export interface MessageBodyDeliverOk {

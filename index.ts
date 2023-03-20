@@ -10,13 +10,18 @@ import {
   MessageBodyInit,
   MessageBodyRead,
   MessageBodyTopology,
+  MessageId,
   MessageType,
   send,
   State,
 } from './lib'
 
 function handleInit(message: Message<MessageBodyInit>): State {
-  const node = { id: message.body.node_id }
+  const {
+    body: { node_ids: nodeIds, node_id: nodeId },
+  } = message
+  const node = { id: nodeId }
+
   send({
     src: node.id,
     dest: message.src,
@@ -25,11 +30,25 @@ function handleInit(message: Message<MessageBodyInit>): State {
       in_reply_to: message.body.msg_id,
     },
   })
+
+  /**
+   * Ignore the topology set by maelstrom and instead set a ring
+   *
+   * Ignoring the topology is mentioned in the exercises description. I chose
+   * to create a ring for a more straightforward setup where each node only
+   * "broadcasts" to the next node in line. This is definitely less fault
+   * tolerant than having more redundancy but works for the exercises.
+   */
+  const indexOfNode = nodeIds.indexOf(nodeId)
+  const neighbour =
+    indexOfNode === nodeIds.length - 1 ? nodeIds[0] : nodeIds[indexOfNode + 1]
+  const neighbours = [neighbour]
+
   return {
     node,
     nextMessageId: 0,
     outstandingMessages: [],
-    broadcast: { messages: [], neighbours: [] },
+    broadcast: { messages: [], neighbours },
   }
 }
 
@@ -65,7 +84,13 @@ function handleGenerate(
   return state
 }
 
-function deliver(state: State, dest: MaelstromNodeId, value: number): void {
+function deliver(
+  state: State,
+  dest: MaelstromNodeId,
+  value: number,
+  broadcastTo: MaelstromNodeId,
+  broadcastMessageId: MessageId
+): void {
   const msgId = state.nextMessageId
   state.nextMessageId += 1
 
@@ -76,6 +101,8 @@ function deliver(state: State, dest: MaelstromNodeId, value: number): void {
       type: MessageType.Deliver,
       message: value,
       msg_id: msgId,
+      broadcast_to: broadcastTo,
+      broadcast_message_id: broadcastMessageId,
     },
   }
 
@@ -97,11 +124,12 @@ function handleBroadcast(
   state: State,
   message: Message<MessageBodyBroadcast>
 ): State {
-  const { message: messageNumber } = message.body
+  const { dest: broadcastTo } = message
+  const { message: messageNumber, msg_id: broadcastMessageId } = message.body
 
   state.broadcast.messages.push(messageNumber)
   state.broadcast.neighbours.forEach((neighbourId) => {
-    deliver(state, neighbourId, messageNumber)
+    deliver(state, neighbourId, messageNumber, broadcastTo, broadcastMessageId)
   })
 
   send({
@@ -120,10 +148,13 @@ function handleTopology(
   state: State,
   message: Message<MessageBodyTopology>
 ): State {
-  const topology = message.body.topology
-  const neighbours = topology[state.node.id]
+  /**
+   * See handle init for an explanation as to why this code is commented
+   */
+  // const topology = message.body.topology
+  // const neighbours = topology[state.node.id]
 
-  state.broadcast.neighbours = neighbours
+  // state.broadcast.neighbours = neighbours
 
   send({
     src: state.node.id,
@@ -157,7 +188,16 @@ function handleDeliver(
   state: State,
   message: Message<MessageBodyDeliver>
 ): State {
-  const { message: messageNumber } = message.body
+  const {
+    message: messageNumber,
+    broadcast_to: broadcastTo,
+    broadcast_message_id: broadcastMessageId,
+  } = message.body
+
+  if (broadcastTo === state.node.id) {
+    // Break the replication
+    return state
+  }
 
   // TODO: handle re-delivery of the same message
   state.broadcast.messages.push(messageNumber)
@@ -166,7 +206,7 @@ function handleDeliver(
       return
     }
 
-    deliver(state, neighbourId, messageNumber)
+    deliver(state, neighbourId, messageNumber, broadcastTo, broadcastMessageId)
   })
 
   send({
@@ -272,7 +312,7 @@ let state: State | undefined
 process.stdin.resume()
 process.stdin.on('data', (data) => {
   if (data) {
-    log(['recv(string)', data.toString()])
+    // log(['recv(string)', data.toString()])
 
     const messages = data.toString().trim().split('\n')
     state = messages.reduce((state, message) => {
