@@ -5,7 +5,6 @@ import {
   MaelstromNode,
   Message,
   MessageBodyAdd,
-  MessageBodyDeliver,
   MessageBodyInit,
   MessageBodyKVReadOk,
   MessageBodyRead,
@@ -14,7 +13,7 @@ import {
 import { ANode } from '../node'
 
 interface State {
-  isLeader: boolean
+  // The counter is used for debugging purposes
   counter: number
 }
 
@@ -23,7 +22,7 @@ const KVKEY = 'value'
 
 const input = new ConsoleInputChannel()
 const output = new ConsoleOutputchannel()
-const node = new ANode<State>({ isLeader: false, counter: 0 }, input, output)
+const node = new ANode<State>({ counter: 0 }, input, output)
 
 async function updateCounter<State>(
   node: MaelstromNode<State>,
@@ -33,7 +32,7 @@ async function updateCounter<State>(
    * IMPORTANT: await here doesn't prevent the node from receiving and
    * handling other messages
    */
-  const reply = await node.sendSync(KVID, {
+  const reply = await node.rpcSync(KVID, {
     type: MessageType.KVRead,
     key: KVKEY,
   })
@@ -45,7 +44,7 @@ async function updateCounter<State>(
     }`
   )
 
-  let casReply = await node.sendSync(KVID, {
+  let casReply = await node.rpcSync(KVID, {
     type: MessageType.KVCas,
     key: KVKEY,
     from: readMessage.body.value,
@@ -53,13 +52,13 @@ async function updateCounter<State>(
   })
 
   while (casReply.body.type === MessageType.Error) {
-    const reply = await node.sendSync(KVID, {
+    const reply = await node.rpcSync(KVID, {
       type: MessageType.KVRead,
       key: KVKEY,
     })
     const readMessage = reply as Message<MessageBodyKVReadOk>
 
-    casReply = await node.sendSync(KVID, {
+    casReply = await node.rpcSync(KVID, {
       type: MessageType.KVCas,
       key: KVKEY,
       from: readMessage.body.value,
@@ -77,16 +76,13 @@ node.on(MessageType.Init, async (node, state, message) => {
 
   node.id = nodeId
 
-  if (nodeId === 'n0') {
-    state.isLeader = true
-    node.send(KVID, {
-      type: MessageType.KVCas,
-      key: KVKEY,
-      from: 0,
-      to: 0,
-      create_if_not_exists: true,
-    })
-  }
+  node.send(KVID, {
+    type: MessageType.KVCas,
+    key: KVKEY,
+    from: 0,
+    to: 0,
+    create_if_not_exists: true,
+  })
 
   node.send(message.src, {
     type: MessageType.InitOk,
@@ -101,13 +97,13 @@ node.on(MessageType.Read, async (node, _state, message) => {
   let replyReadMessage: Message<MessageBodyKVReadOk>
 
   do {
-    const replyRead = await node.sendSync(KVID, {
+    const replyRead = await node.rpcSync(KVID, {
       type: MessageType.KVRead,
       key: KVKEY,
     })
     replyReadMessage = replyRead as Message<MessageBodyKVReadOk>
 
-    casReply = await node.sendSync(KVID, {
+    casReply = await node.rpcSync(KVID, {
       type: MessageType.KVCas,
       key: KVKEY,
       from: replyReadMessage.body.value,
@@ -128,28 +124,12 @@ node.on(MessageType.Add, async (node, state, message) => {
     body: { delta, msg_id: msgId },
   } = addMessage
 
-  if (state.isLeader) {
-    state.counter += delta
-    log(`[counter] ${state.counter}`)
-    await updateCounter(node, delta)
-  } else {
-    node.send('n0', {
-      type: MessageType.Deliver,
-      message: delta,
-    })
-  }
+  state.counter += delta
+  log(`[counter] ${state.counter}`)
+  await updateCounter(node, delta)
 
   node.send(addMessage.src, {
     type: MessageType.AddOk,
     in_reply_to: msgId,
   })
-})
-
-node.on(MessageType.Deliver, (node, state, message) => {
-  const deliverMessage = message as Message<MessageBodyDeliver>
-  const { message: delta } = deliverMessage.body
-
-  state.counter += delta
-  log(`[counter] ${state.counter}`)
-  updateCounter(node, delta)
 })

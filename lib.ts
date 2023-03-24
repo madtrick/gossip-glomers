@@ -45,6 +45,10 @@ export interface TypableMessage<T = MessageType> {
   type: T
 }
 
+export interface ReplyMessage {
+  in_reply_to: MessageId
+}
+
 export interface MessageBodyInit extends TypableMessage<MessageType.Init> {
   msg_id: MessageId
   node_id: MaelstromNodeId
@@ -87,9 +91,8 @@ export interface MessageBodyDeliver
 }
 
 export interface MessageBodyDeliverOk
-  extends TypableMessage<MessageType.DeliverOk> {
-  in_reply_to: MessageId
-}
+  extends TypableMessage<MessageType.DeliverOk>,
+    ReplyMessage {}
 
 export function messageIsDeliverOk(
   message: Message
@@ -118,8 +121,9 @@ export interface MessageBodyAdd extends TypableMessage<MessageType.Add> {
   msg_id: MessageId
 }
 
-export interface MessageBodyError extends TypableMessage<MessageType.Error> {
-  in_reply_to: number
+export interface MessageBodyError
+  extends TypableMessage<MessageType.Error>,
+    ReplyMessage {
   code: number
   text: string
 }
@@ -161,12 +165,13 @@ export interface MaelstromNode<State> {
   neighbours: Array<MaelstromNodeId>
   state: State
   on: (type: MessageType, handler: MessageHandler<State>) => void
-  send: (
+  send: (dest: MaelstromNodeId, message: Record<string, unknown>) => void
+  rpc: (
     dest: MaelstromNodeId,
     message: Record<string, unknown>,
     callback?: MessageHandler<State>
   ) => void
-  sendSync: (
+  rpcSync: (
     dest: MaelstromNodeId,
     message: Record<string, unknown>
   ) => Promise<Message<TypableMessage>>

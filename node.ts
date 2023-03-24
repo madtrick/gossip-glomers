@@ -11,6 +11,7 @@ import {
   MessageId,
   MessageType,
   OutputChannel,
+  ReplyMessage,
   TypableMessage,
 } from './lib'
 
@@ -74,7 +75,13 @@ export class ANode<State> implements MaelstromNode<State> {
   private outputChannel: OutputChannel
   private messageHandlers: Partial<Record<MessageType, MessageHandler<State>>>
   private nextMessageId: number
-  private pendingRPCs: Record<MessageId, MessageHandler<State>>
+  private pendingRPCs: Record<
+    MessageId,
+    {
+      callback?: MessageHandler<State>
+      timeout: NodeJS.Timeout
+    }
+  >
   neighbours: Array<MaelstromNodeId>
   state: State
   id: MaelstromNodeId
@@ -95,7 +102,13 @@ export class ANode<State> implements MaelstromNode<State> {
       if (this.pendingRPCs[data.body.in_reply_to]) {
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        this.pendingRPCs[data.body.in_reply_to](this, this.state, data)
+        const callback = this.pendingRPCs[data.body.in_reply_to].callback
+        callback && callback(this, this.state, data)
+
+        clearTimeout(
+          this.pendingRPCs[(data.body as unknown as ReplyMessage).in_reply_to]
+            .timeout
+        )
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
         delete this.pendingRPCs[data.body.in_reply_to]
@@ -147,7 +160,7 @@ export class ANode<State> implements MaelstromNode<State> {
     this.messageHandlers[type] = callback
   }
 
-  send(
+  rpc(
     dest: MaelstromNodeId,
     data: Record<string, unknown>,
     callback?: MessageHandler<State>
@@ -164,14 +177,70 @@ export class ANode<State> implements MaelstromNode<State> {
 
     log(`[send] ${JSON.stringify(message)}`)
 
-    if (callback) {
-      this.pendingRPCs[msgId] = callback
+    // if (callback) {
+    //   this.pendingRPCs[msgId] = callback
+    // }
+    this.pendingRPCs[msgId] = {
+      callback,
+      timeout: setTimeout(() => {
+        log('[send] timeout expired')
+        if (this.pendingRPCs[msgId] === undefined) {
+          // TODO: is this case even posible. If the reply has been received
+          // and this value set to `undefined` then the timout must have been
+          // cleared too
+          log('[send] reply received - not retrying')
+          return
+        }
+
+        log('[send] reply not received - retrying')
+        this.rpc(dest, data, callback)
+      }, 1000),
     }
     this.nextMessageId += 1
     this.outputChannel.push(message)
   }
 
-  sendSync(dest: MaelstromNodeId, data: Record<string, unknown>): Promise<any> {
+  rpcSync(dest: MaelstromNodeId, data: Record<string, unknown>): Promise<any> {
+    return new Promise((resolve) => {
+      const callback: MessageHandler<State> = (_node, _state, message) => {
+        resolve(message)
+      }
+
+      const send = () => {
+        const msgId = this.nextMessageId
+        const message = {
+          dest,
+          src: this.id,
+          body: {
+            msg_id: msgId,
+            ...data,
+          },
+        }
+
+        this.pendingRPCs[msgId] = {
+          callback,
+          timeout: setTimeout(() => {
+            log('[sendSync] timeout expired')
+            if (this.pendingRPCs[msgId] === undefined) {
+              log('[sendSync] reply received - not retrying')
+              return
+            }
+
+            log('[sendSync] reply not received - retrying')
+            send()
+          }, 1000),
+        }
+
+        log(`[sendSync] ${JSON.stringify(message)}`)
+        this.nextMessageId += 1
+        this.outputChannel.push(message)
+      }
+
+      send()
+    })
+  }
+
+  send(dest: MaelstromNodeId, data: Record<string, unknown>) {
     const msgId = this.nextMessageId
     const message = {
       dest,
@@ -182,42 +251,9 @@ export class ANode<State> implements MaelstromNode<State> {
       },
     }
 
-    let callback: MessageHandler<State>
     log(`[send] ${JSON.stringify(message)}`)
-
-    const promise = new Promise((resolve) => {
-      callback = (_node, _state, message) => {
-        resolve(message)
-      }
-      this.pendingRPCs[msgId] = callback
-    })
 
     this.nextMessageId += 1
     this.outputChannel.push(message)
-
-    return promise
   }
-
-  // rpc(
-  //   dest: MaelstromNodeId,
-  //   data: Record<string, unknown>,
-  //   callback: RPCCallback
-  // ) {
-  //   const msgId = this.nextMessageId
-  //   const message = {
-  //     dest,
-  //     src: this.id,
-  //     body: {
-  //       msg_id: msgId,
-  //       ...data,
-  //     },
-  //   }
-
-  //   log(`[rpc] ${JSON.stringify(message)}`)
-
-  //   this.pendingRPCs[msgId] = callback
-
-  //   this.nextMessageId += 1
-  //   this.outputChannel.push(message)
-  // }
 }
