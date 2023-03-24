@@ -17,6 +17,24 @@ export enum MessageType {
   KVReadOk = 'read_ok',
   KVWrite = 'write',
   KVWriteOk = 'write_ok',
+  KVCas = 'cas',
+  KVCasOk = 'cas_ok',
+  Add = 'add',
+  AddOk = 'add_ok',
+  Error = 'error',
+}
+
+export enum ErrorTypes {
+  PreconditionFailed = '22',
+}
+
+export function assertMessageType<T extends MessageType>(
+  message: Message,
+  type: T
+): asserts message is Message<TypableMessage<T>> {
+  if (message.body.type !== type) {
+    throw new Error('Unexpected message type')
+  }
 }
 
 export type MaelstromNodeId = string
@@ -85,13 +103,25 @@ export interface MessageBodyKVRead extends TypableMessage<MessageType.KVRead> {
 
 export interface MessageBodyKVReadOk
   extends TypableMessage<MessageType.KVReadOk> {
-  value: unknown
+  // Simplifying here by setting the type of value to "number"
+  value: number
 }
 
 export interface MessageBodyKVWrite
   extends TypableMessage<MessageType.KVWrite> {
   key: KVKey
   value: unknown
+}
+
+export interface MessageBodyAdd extends TypableMessage<MessageType.Add> {
+  delta: number
+  msg_id: MessageId
+}
+
+export interface MessageBodyError extends TypableMessage<MessageType.Error> {
+  in_reply_to: number
+  code: number
+  text: string
 }
 
 export interface Message<B = TypableMessage> {
@@ -136,6 +166,10 @@ export interface MaelstromNode<State> {
     message: Record<string, unknown>,
     callback?: MessageHandler<State>
   ) => void
+  sendSync: (
+    dest: MaelstromNodeId,
+    message: Record<string, unknown>
+  ) => Promise<Message<TypableMessage>>
 }
 
 export interface State {

@@ -1,4 +1,5 @@
 import {
+  assertMessageType,
   InputChannel,
   log,
   MaelstromNode,
@@ -68,15 +69,6 @@ function assertMessage(
   }
 }
 
-function assertMessageType<T extends MessageType>(
-  message: Message,
-  type: T
-): asserts message is Message<TypableMessage<T>> {
-  if (message.body.type !== type) {
-    throw new Error('Unexpected message type')
-  }
-}
-
 export class ANode<State> implements MaelstromNode<State> {
   private inputChannel: InputChannel
   private outputChannel: OutputChannel
@@ -97,6 +89,7 @@ export class ANode<State> implements MaelstromNode<State> {
     this.inputChannel.attach((data: unknown) => {
       assertMessage(data)
 
+      log(`[recv] ${JSON.stringify(data)}`)
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       if (this.pendingRPCs[data.body.in_reply_to]) {
@@ -109,8 +102,6 @@ export class ANode<State> implements MaelstromNode<State> {
       } else {
         const messageType: MessageType = data.body.type
         const handler = this.messageHandlers[messageType]
-
-        log(`[recv] ${JSON.stringify(data)}`)
 
         if (handler) {
           log(`Handling "${messageType}"`)
@@ -178,6 +169,33 @@ export class ANode<State> implements MaelstromNode<State> {
     }
     this.nextMessageId += 1
     this.outputChannel.push(message)
+  }
+
+  sendSync(dest: MaelstromNodeId, data: Record<string, unknown>): Promise<any> {
+    const msgId = this.nextMessageId
+    const message = {
+      dest,
+      src: this.id,
+      body: {
+        msg_id: msgId,
+        ...data,
+      },
+    }
+
+    let callback: MessageHandler<State>
+    log(`[send] ${JSON.stringify(message)}`)
+
+    const promise = new Promise((resolve) => {
+      callback = (_node, _state, message) => {
+        resolve(message)
+      }
+      this.pendingRPCs[msgId] = callback
+    })
+
+    this.nextMessageId += 1
+    this.outputChannel.push(message)
+
+    return promise
   }
 
   // rpc(
