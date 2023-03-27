@@ -22,10 +22,19 @@ export enum MessageType {
   Add = 'add',
   AddOk = 'add_ok',
   Error = 'error',
+  Send = 'send',
+  SendOk = 'send_ok',
+  Poll = 'poll',
+  PollOk = 'poll_ok',
+  CommitOffsets = 'commit_offsets',
+  CommitOffsetsOk = 'commit_offsets_ok',
+  ListCommittedOffsets = 'list_committed_offsets',
+  ListCommittedOffsetsOk = 'list_committed_offsets_ok',
 }
 
 export enum ErrorTypes {
-  PreconditionFailed = '22',
+  KeyDoesNotExist = 20,
+  PreconditionFailed = 22,
 }
 
 export function assertMessageType<T extends MessageType>(
@@ -104,10 +113,9 @@ export interface MessageBodyKVRead extends TypableMessage<MessageType.KVRead> {
   key: KVKey
 }
 
-export interface MessageBodyKVReadOk
+export interface MessageBodyKVReadOk<T>
   extends TypableMessage<MessageType.KVReadOk> {
-  // Simplifying here by setting the type of value to "number"
-  value: number
+  value: T
 }
 
 export interface MessageBodyKVWrite
@@ -121,10 +129,44 @@ export interface MessageBodyAdd extends TypableMessage<MessageType.Add> {
   msg_id: MessageId
 }
 
+export type KakfkaLogKey = string
+export type KakfkaLogOffset = number
+export type KafkaLogValue = number
+export type KafkaLog = Array<KafkaLogValue>
+
+export interface MessageBodyKafkaSend extends TypableMessage<MessageType.Send> {
+  key: KakfkaLogKey
+  msg: KafkaLogValue
+  msg_id: MessageId
+}
+
+export interface MessageBodyKafkaPoll extends TypableMessage<MessageType.Poll> {
+  offsets: Record<KakfkaLogKey, KakfkaLogOffset>
+  msg_id: MessageId
+}
+
+export interface MessageBodyKafkaCommitOffsets
+  extends TypableMessage<MessageType.CommitOffsets> {
+  offsets: Record<KakfkaLogKey, KakfkaLogOffset>
+  msg_id: MessageId
+}
+
+export interface MessageBodyKafkaListCommittedOffsets
+  extends TypableMessage<MessageType.ListCommittedOffsets> {
+  keys: Array<KakfkaLogKey>
+  msg_id: MessageId
+}
+
+export function isErrorMessage(
+  message: Message<TypableMessage>
+): message is Message<MessageBodyError> {
+  return message.body.type === MessageType.Error
+}
+
 export interface MessageBodyError
   extends TypableMessage<MessageType.Error>,
     ReplyMessage {
-  code: number
+  code: ErrorTypes
   text: string
 }
 
@@ -143,22 +185,11 @@ export interface OutstandingMessage {
 export const log = (data: unknown) =>
   console.error(`[${new Date().toISOString()}]: ${JSON.stringify(data)}`)
 
-// export function send(data: unknown): void {
-//   log(['send', data])
-//   console.log(JSON.stringify(data))
-// }
-
 export type MessageHandler<State> = (
   node: MaelstromNode<State>,
   state: State,
   message: Message<TypableMessage>
 ) => void
-
-// export type RPCCallback = <State>(
-//   node: MaelstromNode<State>,
-//   state: State,
-//   data: unknown
-// ) => void
 
 export interface MaelstromNode<State> {
   id: string

@@ -36,7 +36,7 @@ async function updateCounter<State>(
     type: MessageType.KVRead,
     key: KVKEY,
   })
-  const readMessage = reply as Message<MessageBodyKVReadOk>
+  const readMessage = reply as Message<MessageBodyKVReadOk<number>>
 
   log(
     `[update value] ${readMessage.body.value} / ${
@@ -56,7 +56,7 @@ async function updateCounter<State>(
       type: MessageType.KVRead,
       key: KVKEY,
     })
-    const readMessage = reply as Message<MessageBodyKVReadOk>
+    const readMessage = reply as Message<MessageBodyKVReadOk<number>>
 
     casReply = await node.rpcSync(KVID, {
       type: MessageType.KVCas,
@@ -68,7 +68,7 @@ async function updateCounter<State>(
   // } while (casReply.body.type === MessageType.Error)
 }
 
-node.on(MessageType.Init, async (node, state, message) => {
+node.on(MessageType.Init, async (node, _state, message) => {
   const initMessage = message as Message<MessageBodyInit>
   const {
     body: { node_id: nodeId },
@@ -94,14 +94,14 @@ node.on(MessageType.Read, async (node, _state, message) => {
   const readMessage = message as Message<MessageBodyRead>
 
   let casReply: Message
-  let replyReadMessage: Message<MessageBodyKVReadOk>
+  let replyReadMessage: Message<MessageBodyKVReadOk<number>>
 
   do {
     const replyRead = await node.rpcSync(KVID, {
       type: MessageType.KVRead,
       key: KVKEY,
     })
-    replyReadMessage = replyRead as Message<MessageBodyKVReadOk>
+    replyReadMessage = replyRead as Message<MessageBodyKVReadOk<number>>
 
     casReply = await node.rpcSync(KVID, {
       type: MessageType.KVCas,
