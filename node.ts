@@ -26,11 +26,6 @@ export function handleInitMessage<State>(
   } = message
 
   node.id = nodeId
-  node.send(message.src, {
-    type: MessageType.InitOk,
-    in_reply_to: message.body.msg_id,
-  })
-
   /**
    * Ignore the topology set by maelstrom and instead set a ring
    *
@@ -47,6 +42,11 @@ export function handleInitMessage<State>(
       indexOfNode === nodeIds.length - 1 ? nodeIds[0] : nodeIds[indexOfNode + 1]
     node.neighbours = [neighbour]
   }
+
+  node.send(message.src, {
+    type: MessageType.InitOk,
+    in_reply_to: message.body.msg_id,
+  })
 
   return state
 }
@@ -96,7 +96,12 @@ export class ANode<State> implements MaelstromNode<State> {
     this.inputChannel.attach((data: unknown) => {
       assertMessage(data)
 
-      log(`[recv] ${JSON.stringify(data)}`)
+      log(
+        `[recv][from:${data.src}][type:${data.body.type}][msg_id:${
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (data.body as any).msg_id
+        }] ${JSON.stringify(data)}`
+      )
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       if (this.pendingRPCs[data.body.in_reply_to]) {
@@ -200,6 +205,7 @@ export class ANode<State> implements MaelstromNode<State> {
     this.outputChannel.push(message)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rpcSync(dest: MaelstromNodeId, data: Record<string, unknown>): Promise<any> {
     return new Promise((resolve) => {
       const callback: MessageHandler<State> = (_node, _state, message) => {
