@@ -30,6 +30,8 @@ export enum MessageType {
   CommitOffsetsOk = 'commit_offsets_ok',
   ListCommittedOffsets = 'list_committed_offsets',
   ListCommittedOffsetsOk = 'list_committed_offsets_ok',
+  Txn = 'txn',
+  TxnOK = 'txn_ok',
 }
 
 export enum ErrorTypes {
@@ -154,6 +156,16 @@ export interface MessageBodyKafkaCommitOffsets
 export interface MessageBodyKafkaListCommittedOffsets
   extends TypableMessage<MessageType.ListCommittedOffsets> {
   keys: Array<KakfkaLogKey>
+  msg_id: MessageId
+}
+
+export enum TransactionOperation {
+  Read = 'r',
+  Write = 'w',
+}
+export type TransactionAction = [TransactionOperation, number, number]
+export interface MessageBodyTxn extends TypableMessage<MessageType.Txn> {
+  txn: Array<TransactionAction>
   msg_id: MessageId
 }
 
