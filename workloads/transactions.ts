@@ -1,10 +1,12 @@
 import {
   ConsoleInputChannel,
   ConsoleOutputchannel,
+  log,
   Message,
   MessageBodyInit,
   MessageBodyTxn,
   MessageType,
+  TransactionAction,
   TransactionOperation,
 } from '../lib'
 import { ANode } from '../node'
@@ -39,10 +41,17 @@ node.on(MessageType.Txn, (node, state, message) => {
     body: { txn, msg_id },
   } = message as Message<MessageBodyTxn>
 
-  const result = []
-  for (const action of txn) {
+  const result: Array<TransactionAction> = []
+  const applyTxn = (txn: Array<TransactionAction>) => {
+    const action = txn.shift()
+
+    if (action === undefined) {
+      return
+    }
+
     const [op, key, value] = action
 
+    log(`[txn] msg_id ${msg_id} src ${src} apply ${action}`)
     if (op === TransactionOperation.Read) {
       result.push([op, key, state.db[key] ?? null])
     } else {
@@ -50,7 +59,12 @@ node.on(MessageType.Txn, (node, state, message) => {
 
       result.push(action)
     }
+
+    setImmediate(applyTxn, txn)
+    // setTimeout(applyTxn, 5, txn)
   }
+
+  applyTxn(txn)
 
   node.send(src, {
     type: MessageType.TxnOK,
