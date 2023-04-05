@@ -163,7 +163,13 @@ export enum TransactionOperation {
   Read = 'r',
   Write = 'w',
 }
-export type TransactionAction = [TransactionOperation, number, number]
+export type TransactionRegisterKey = number
+export type TransactionRegisterValue = number
+export type TransactionAction = [
+  TransactionOperation,
+  TransactionRegisterKey,
+  TransactionRegisterValue
+]
 export interface MessageBodyTxn extends TypableMessage<MessageType.Txn> {
   txn: Array<TransactionAction>
   msg_id: MessageId
