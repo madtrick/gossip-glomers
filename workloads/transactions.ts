@@ -74,6 +74,11 @@ node.on(MessageType.Txn, (node, state, message) => {
         }
       )
       // delete state.inflightTransactions[transactionId]
+      node.send(src, {
+        type: MessageType.TxnOK,
+        txn: result,
+        in_reply_to: msg_id,
+      })
       return
     }
 
@@ -109,10 +114,4 @@ node.on(MessageType.Txn, (node, state, message) => {
   }
 
   applyTxn(txn)
-
-  node.send(src, {
-    type: MessageType.TxnOK,
-    txn: result,
-    in_reply_to: msg_id,
-  })
 })
