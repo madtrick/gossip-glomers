@@ -3,14 +3,13 @@ import {
   ConsoleOutputchannel,
   log,
   Message,
-  MessageBodyInit,
   MessageBodyTxn,
   MessageType,
   TransactionAction,
   TransactionOperation,
   TransactionRegisterKey,
 } from '../lib'
-import { hasWriteWrite } from '../lib/graph-dependency'
+import { hasWriteWrite } from '../lib/dependency-graph'
 import { ANode } from '../node'
 
 type DBRegisterKey = number
@@ -40,19 +39,6 @@ const node = new ANode<State>(
   output
 )
 
-node.on(MessageType.Init, async (node, _state, message) => {
-  const initMessage = message as Message<MessageBodyInit>
-  const {
-    body: { node_id: nodeId },
-  } = initMessage
-
-  node.id = nodeId
-  node.send(message.src, {
-    type: MessageType.InitOk,
-    in_reply_to: initMessage.body.msg_id,
-  })
-})
-
 node.on(MessageType.Txn, (node, state, message) => {
   const {
     src,
@@ -61,11 +47,18 @@ node.on(MessageType.Txn, (node, state, message) => {
   const transactionId = state.transactionCounter
   state.transactionCounter += 1
 
+  node.neighbours.forEach((neighbour) => {
+    node.send(neighbour, {
+      type: MessageType.TxReplicate,
+      txn,
+    })
+  })
   const result: Array<TransactionAction> = []
-  const applyTxn = (txn: Array<TransactionAction>) => {
-    const action = txn.shift()
+  const applyTxn = (txnActions: Array<TransactionAction>) => {
+    const action = txnActions.shift()
 
     if (action === undefined) {
+      // Remove inflight operations belonging to the transactio that just finished
       state.inflightOperations = state.inflightOperations.filter(
         (inflightOperation) => {
           const txid = inflightOperation[0]
@@ -79,6 +72,7 @@ node.on(MessageType.Txn, (node, state, message) => {
         txn: result,
         in_reply_to: msg_id,
       })
+
       return
     }
 
@@ -110,8 +104,57 @@ node.on(MessageType.Txn, (node, state, message) => {
     }
 
     state.transactionOperationCounter += 1
+    setImmediate(applyTxn, txnActions)
+  }
+
+  applyTxn([...txn])
+})
+
+node.on(MessageType.TxReplicate, (_node, state, message) => {
+  const {
+    src,
+    body: { txn, msg_id },
+  } = message as Message<MessageBodyTxn>
+  const transactionId = state.transactionCounter
+  state.transactionCounter += 1
+
+  const applyTxn = (txn: Array<TransactionAction>) => {
+    const action = txn.shift()
+
+    if (action === undefined) {
+      state.inflightOperations = state.inflightOperations.filter(
+        (inflightOperation) => {
+          const txid = inflightOperation[0]
+
+          return txid !== transactionId
+        }
+      )
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_op, key, value] = action
+
+    const operationId = state.transactionOperationCounter
+    state.transactionOperationCounter += 1
+
+    log(
+      `[txn] msg_id ${msg_id} src ${src} apply ${action} (tx ${transactionId} op ${operationId})`
+    )
+    /**
+     * Note that we only keep "write" operations in the in-flight array. We
+     * are only looking for write-write cycles
+     */
+    state.inflightOperations.push([transactionId, operationId, key])
+    state.db[key] = value
+
+    if (hasWriteWrite(state.inflightOperations)) {
+      log(`[txn] write-write cycle ${JSON.stringify(state.inflightOperations)}`)
+    }
+
+    state.transactionOperationCounter += 1
     setImmediate(applyTxn, txn)
   }
 
-  applyTxn(txn)
+  applyTxn([...txn])
 })

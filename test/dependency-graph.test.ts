@@ -1,5 +1,5 @@
-import { TransactionRegisterKey } from '../lib'
-import { hasWriteWrite } from '../lib/graph-dependency'
+import { TransactionOperation, TransactionRegisterKey } from '../lib'
+import { hasReadDependency, hasWriteWrite } from '../lib/dependency-graph'
 import {
   TransactionId,
   TransactionOperationIndex,
@@ -53,3 +53,67 @@ describe('foo', () => {
     expect(hasWriteWrite(transactionsOperations)).toBe(false)
   })
 })
+
+// describe('hasReadDependency', () => {
+//   it('foo', () => {
+//     const tx1 = 1
+//     const keytx1 = 1
+
+//     const transactionsOperations: Array<
+//       [
+//         TransactionId,
+//         TransactionOperationIndex,
+//         TransactionRegisterKey,
+//         TransactionOperation
+//       ]
+//     > = [[tx1, 0, keytx1, TransactionOperation.Read]]
+
+//     expect(hasReadDependency(tx1, keytx1, transactionsOperations)).toEqual({
+//       dependency: undefined,
+//     })
+//   })
+
+//   it('bar', () => {
+//     const tx1 = 1
+//     const tx2 = 2
+//     const keytx1 = 1
+
+//     const transactionsOperations: Array<
+//       [
+//         TransactionId,
+//         TransactionOperationIndex,
+//         TransactionRegisterKey,
+//         TransactionOperation
+//       ]
+//     > = [
+//       [tx2, 0, keytx1, TransactionOperation.Read],
+//       [tx1, 1, keytx1, TransactionOperation.Read],
+//     ]
+
+//     expect(hasReadDependency(tx1, keytx1, transactionsOperations)).toEqual({
+//       dependency: undefined,
+//     })
+//   })
+
+//   it('bar 2', () => {
+//     const tx1 = 1
+//     const tx2 = 2
+//     const keytx1 = 1
+
+//     const transactionsOperations: Array<
+//       [
+//         TransactionId,
+//         TransactionOperationIndex,
+//         TransactionRegisterKey,
+//         TransactionOperation
+//       ]
+//     > = [
+//       [tx2, 0, keytx1, TransactionOperation.Write],
+//       [tx1, 1, keytx1, TransactionOperation.Read],
+//     ]
+
+//     expect(hasReadDependency(tx2, keytx1, transactionsOperations)).toEqual({
+//       dependency: tx1,
+//     })
+//   })
+// })

@@ -109,3 +109,35 @@ export function hasWriteWrite(
 
   return !isSerializable(dependencies)
 }
+
+// export function hasReadDependency(
+//   transactionId: TransactionId,
+//   registerKey: TransactionRegisterKey,
+//   _operations: Array<
+//     [
+//       TransactionId,
+//       TransactionOperationIndex,
+//       TransactionRegisterKey,
+//       TransactionOperation
+//     ]
+//   >
+// ): { dependency: TransactionId | undefined } {
+//   const nodes: Array<TransactionId> = Array.from(
+//     transactionId
+//       .reduce((set: Set<TransactionId>, operation) => {
+//         const transactionId = operation[0]
+
+//         set.add(transactionId)
+
+//         return set
+//       }, new Set() as Set<number>)
+//       .values()
+//   )
+
+//   const graph = {}
+
+//   for (const transactionId of nodes) {
+//     graph[transactionId]
+//   }
+
+// }

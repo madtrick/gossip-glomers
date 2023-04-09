@@ -32,6 +32,8 @@ export enum MessageType {
   ListCommittedOffsetsOk = 'list_committed_offsets_ok',
   Txn = 'txn',
   TxnOK = 'txn_ok',
+  TxReplicate = 'tx_replicate',
+  TxnReplicateOk = 'tx_replicate_ok',
 }
 
 export enum ErrorTypes {

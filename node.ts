@@ -26,11 +26,6 @@ export function handleInitMessage<State>(
   } = message
 
   node.id = nodeId
-  node.send(message.src, {
-    type: MessageType.InitOk,
-    in_reply_to: message.body.msg_id,
-  })
-
   /**
    * Ignore the topology set by maelstrom and instead set a ring
    *
@@ -47,6 +42,11 @@ export function handleInitMessage<State>(
       indexOfNode === nodeIds.length - 1 ? nodeIds[0] : nodeIds[indexOfNode + 1]
     node.neighbours = [neighbour]
   }
+
+  node.send(message.src, {
+    type: MessageType.InitOk,
+    in_reply_to: message.body.msg_id,
+  })
 
   return state
 }
