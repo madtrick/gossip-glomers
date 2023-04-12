@@ -1,5 +1,5 @@
 import { TransactionOperation, TransactionRegisterKey } from '../lib'
-import { hasReadDependency, hasWriteWrite } from '../lib/dependency-graph'
+import { hasWriteWrite } from '../lib/dependency-graph'
 import {
   TransactionId,
   TransactionOperationIndex,

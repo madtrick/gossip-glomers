@@ -39,6 +39,7 @@ export enum MessageType {
 export enum ErrorTypes {
   KeyDoesNotExist = 20,
   PreconditionFailed = 22,
+  TransactionAborted = 30,
 }
 
 export function assertMessageType<T extends MessageType>(

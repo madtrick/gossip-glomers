@@ -10,10 +10,12 @@ import {
   TransactionRegisterKey,
 } from '../lib'
 import { hasWriteWrite } from '../lib/dependency-graph'
+import { Scheduled, TimestampedScheduler } from '../lib/timestamped-scheduler'
 import { ANode } from '../node'
 
 type DBRegisterKey = number
-type DBRegisterValue = number
+export type DBRegisterValue = number
+export type Database = Record<DBRegisterKey, DBRegisterValue>
 export type TransactionId = number
 export type TransactionOperationIndex = number
 
@@ -21,6 +23,8 @@ type State = {
   db: Record<DBRegisterKey, DBRegisterValue>
   transactionCounter: number
   transactionOperationCounter: TransactionOperationIndex
+  scheduler: TimestampedScheduler
+  // TODO: remove the inflightOperations
   inflightOperations: Array<
     [TransactionId, TransactionOperationIndex, TransactionRegisterKey]
   >
@@ -28,24 +32,24 @@ type State = {
 
 const input = new ConsoleInputChannel()
 const output = new ConsoleOutputchannel()
+const DATABASE = {}
 const node = new ANode<State>(
   {
-    db: {},
+    db: DATABASE,
     transactionOperationCounter: 0,
     transactionCounter: 0,
     inflightOperations: [],
+    scheduler: new TimestampedScheduler(DATABASE),
   },
   input,
   output
 )
 
-node.on(MessageType.Txn, (node, state, message) => {
+node.on(MessageType.Txn, async (node, state, message) => {
   const {
     src,
     body: { txn, msg_id },
   } = message as Message<MessageBodyTxn>
-  const transactionId = state.transactionCounter
-  state.transactionCounter += 1
 
   node.neighbours.forEach((neighbour) => {
     node.send(neighbour, {
@@ -54,7 +58,10 @@ node.on(MessageType.Txn, (node, state, message) => {
     })
   })
   const result: Array<TransactionAction> = []
-  const applyTxn = (txnActions: Array<TransactionAction>) => {
+  const applyTxn = async (
+    transactionId: TransactionId,
+    txnActions: Array<TransactionAction>
+  ) => {
     const action = txnActions.shift()
 
     if (action === undefined) {
@@ -66,7 +73,8 @@ node.on(MessageType.Txn, (node, state, message) => {
           return txid !== transactionId
         }
       )
-      // delete state.inflightTransactions[transactionId]
+
+      log(`[txn] transaction ${transactionId} commit ${txn}`)
       node.send(src, {
         type: MessageType.TxnOK,
         txn: result,
@@ -81,9 +89,35 @@ node.on(MessageType.Txn, (node, state, message) => {
     const operationId = state.transactionOperationCounter
     state.transactionOperationCounter += 1
 
+    const { action: schedulerAction } = await state.scheduler.schedule(
+      transactionId,
+      key,
+      op,
+      value
+    )
+    log(
+      `[txn] scheduler action ${schedulerAction} (tx ${transactionId} ${op} ${key})`
+    )
+
+    if (schedulerAction === Scheduled.Skip) {
+      setImmediate(applyTxn, transactionId, txnActions)
+      return
+    }
+
+    if (schedulerAction === Scheduled.Abort) {
+      await state.scheduler.abort(transactionId)
+      // Schedule it again (another attempt)
+      // With setImmediate we can run into a loop with the transaction
+      // that caused the abort in the first place
+      // setImmediate(execute, [...txn])
+      setTimeout(execute, Math.random() * 10, [...txn])
+      return
+    }
+
     log(
       `[txn] msg_id ${msg_id} src ${src} apply ${action} (tx ${transactionId} op ${operationId})`
     )
+
     if (op === TransactionOperation.Read) {
       result.push([op, key, state.db[key] ?? null])
     } else {
@@ -103,11 +137,20 @@ node.on(MessageType.Txn, (node, state, message) => {
       result.push(action)
     }
 
-    state.transactionOperationCounter += 1
-    setImmediate(applyTxn, txnActions)
+    // state.transactionOperationCounter += 1
+    setImmediate(applyTxn, transactionId, txnActions)
   }
 
-  applyTxn([...txn])
+  const execute = async (actions: Array<TransactionAction>) => {
+    const transactionId = state.transactionCounter
+    state.transactionCounter += 1
+
+    await state.scheduler.register(transactionId)
+
+    applyTxn(transactionId, actions)
+  }
+
+  execute([...txn])
 })
 
 node.on(MessageType.TxReplicate, (_node, state, message) => {
