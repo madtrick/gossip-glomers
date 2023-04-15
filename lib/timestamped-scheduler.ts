@@ -1,4 +1,4 @@
-import { TransactionOperation, TransactionRegisterKey } from '../lib'
+import { log, TransactionOperation, TransactionRegisterKey } from '../lib'
 import {
   Database,
   DBRegisterValue,
@@ -12,7 +12,18 @@ export enum Scheduled {
   Skip = 'skip',
 }
 
-const UNUSED_PAST_TIMESTAMP = 0
+export enum AbortReason {
+  ReadUncommited = 'read_uncommited',
+  RepeatableRead = 'repeatable_read',
+}
+
+export type ScheduleAbort = {
+  action: Scheduled.Abort
+  reason: AbortReason
+  conflictsWith: TransactionId
+}
+
+const UNUSED_PAST_TIMESTAMP = -1
 
 class Deferred {
   public promise: Promise<void>
@@ -53,7 +64,6 @@ export class TimestampedScheduler {
       timestamp: TransactionTimestamp
       deferred: Deferred
       dependsOn: Array<TransactionId>
-      registers: Set<TransactionRegisterKey>
       overwrites: Array<
         [TransactionRegisterKey, DBRegisterValue, TransactionTimestamp]
       >
@@ -80,35 +90,73 @@ export class TimestampedScheduler {
       timestamp: this.nextTimestamp,
       deferred: new Deferred(),
       dependsOn: [],
-      registers: new Set(),
       overwrites: [],
     }
     this.nextTimestamp += 1
 
-    return Promise.resolve()
+    return
   }
 
   async abort(transactionId: TransactionId): Promise<void> {
-    // Revert old values
-    this.transactions[transactionId].overwrites.forEach(
-      ([register, value, timestamp]) => {
+    const txsToRevert = [transactionId]
+
+    while (txsToRevert.length > 0) {
+      const txToRevert = txsToRevert.shift() as number
+      const { overwrites } = this.transactions[txToRevert]
+
+      overwrites.forEach(([register, value, timestamp]) => {
         if (
           this.writeTimestamps[register] ===
-          this.transactions[transactionId].timestamp
+          this.transactions[txToRevert].timestamp
         ) {
           this.database[register] = value
           this.writeTimestamps[register] = timestamp
+
+          if (this.timestampToTransactions[timestamp]) {
+            /**
+             * For each reverted transaction we have to consider reverting the
+             * transaction that made the latest change prior to the one we are
+             * reverting for this transaction. Without doing this we can leave
+             * the database in an incorrect state. Take the following example:
+             *
+             *
+             *                W1(X)                             W1(X)
+             *   T1  ─────────────────────────────────────────────────────────
+             *
+             *
+             *
+             *                          R2(X)        W2(X)              COMMIT
+             *   T2  ─────────────────────────────────────────────────────────
+             *
+             * T1 will abort on the second write. T2 will abort on commit
+             * (dependency with T1 which already aborted). T1 won't revert it's
+             * write because it's timestamp is different to the timestamp of
+             * the register. When T2 reverts it will revert the value of X to
+             * that of the first write of T1 which is incorrect too.
+             */
+            txsToRevert.push(this.timestampToTransactions[timestamp])
+          }
         }
-      }
-    )
+      })
+    }
+    this.clearRegisters(transactionId)
+
     this.transactions[transactionId].deferred.reject()
-    delete this.transactions[transactionId]
+    // Can't delete the transaction because it can be in the "dependsOn" of
+    // other concurrent transactions
+    // delete this.transactions[transactionId]
   }
 
   async commit(transactionId: TransactionId): Promise<'committed' | 'aborted'> {
+    log(`commit ${transactionId} ${this.transactions[transactionId].dependsOn}`)
     const promises = this.transactions[transactionId].dependsOn.map((txid) => {
       if (this.transactions[txid] === undefined) {
-        throw new Error('unexpected transaction not found')
+        throw new Error(`unexpected transaction ${txid} not found`)
+      }
+
+      if (txid === transactionId) {
+        // Avoid self loops
+        return
       }
 
       return this.transactions[txid].deferred.promise
@@ -117,9 +165,32 @@ export class TimestampedScheduler {
     try {
       await Promise.all(promises)
       this.transactions[transactionId].deferred.resolve()
-      delete this.transactions[transactionId]
+
+      /**
+       * We have to clear the timestamps for the registers read and written by
+       * this transaction to avoid creating fake dependencies with other
+       * transactions.
+       *
+       * After this transaction has commited there can't be a conflict with the
+       * read and write operations so it's not necessary to keep the timestamps
+       * for the operations this transaction dit.
+       */
+      this.clearRegisters(transactionId)
+
+      /**
+       * Once a transaction has commited its changes are "persisted" so
+       * we won't undo its changes. Therefore we clear the "overwrites".
+       *
+       * If we didn't clear it and we reached a commited transaction from an
+       * aborted one, we could undo an already commited change.
+       */
+      this.transactions[transactionId].overwrites = []
+
       return 'committed'
     } catch (_e) {
+      // Calling abort here to clear registers and reset old values
+      this.abort(transactionId)
+
       return 'aborted'
     }
   }
@@ -128,8 +199,9 @@ export class TimestampedScheduler {
     transactionId: TransactionId,
     register: TransactionRegisterKey,
     operation: TransactionOperation,
+    // TODO: remove the "value" argument
     value: null | DBRegisterValue
-  ): Promise<{ action: Scheduled }> {
+  ): Promise<{ action: Scheduled.Skip | Scheduled.Run } | ScheduleAbort> {
     if (this.transactions[transactionId] === undefined) {
       throw new Error('transaction not registered')
     }
@@ -143,7 +215,11 @@ export class TimestampedScheduler {
 
     if (operation === TransactionOperation.Read) {
       if (registerWriteTimestamp > transactionTimestamp) {
-        return { action: Scheduled.Abort }
+        return {
+          action: Scheduled.Abort,
+          reason: AbortReason.ReadUncommited,
+          conflictsWith: this.timestampToTransactions[registerWriteTimestamp],
+        }
       }
 
       if (registerWriteTimestamp !== UNUSED_PAST_TIMESTAMP) {
@@ -152,28 +228,50 @@ export class TimestampedScheduler {
         )
       }
 
-      this.transactions[transactionId].registers.add(register)
       this.readTimestamps[register] = Math.max(
         registerReadTimestamp,
         transactionTimestamp
       )
     } else {
       if (registerReadTimestamp > transactionTimestamp) {
-        return { action: Scheduled.Abort }
+        return {
+          action: Scheduled.Abort,
+          reason: AbortReason.RepeatableRead,
+          conflictsWith: this.timestampToTransactions[registerReadTimestamp],
+        }
       } else if (registerWriteTimestamp > transactionTimestamp) {
         return { action: Scheduled.Skip }
       }
 
-      this.transactions[transactionId].registers.add(register)
-      // TODO test this
       this.transactions[transactionId].overwrites.push([
         register,
         this.database[register],
-        transactionTimestamp,
+        registerWriteTimestamp,
       ])
       this.writeTimestamps[register] = transactionTimestamp
     }
 
     return { action: Scheduled.Run }
+  }
+
+  private clearRegisters(transactionId: TransactionId): void {
+    const transactionTimestamp = this.transactions[transactionId].timestamp
+    const readRegisters = Object.keys(this.readTimestamps)
+    const writeRegisters = Object.keys(this.writeTimestamps)
+
+    readRegisters.forEach((register) => {
+      if (this.readTimestamps[Number(register)] !== transactionTimestamp) {
+        return
+      }
+
+      delete this.readTimestamps[Number(register)]
+    })
+    writeRegisters.forEach((register) => {
+      if (this.writeTimestamps[Number(register)] !== transactionTimestamp) {
+        return
+      }
+
+      delete this.writeTimestamps[Number(register)]
+    })
   }
 }

@@ -7,9 +7,7 @@ import {
   MessageType,
   TransactionAction,
   TransactionOperation,
-  TransactionRegisterKey,
 } from '../lib'
-import { hasWriteWrite } from '../lib/dependency-graph'
 import { Scheduled, TimestampedScheduler } from '../lib/timestamped-scheduler'
 import { ANode } from '../node'
 
@@ -24,10 +22,6 @@ type State = {
   transactionCounter: number
   transactionOperationCounter: TransactionOperationIndex
   scheduler: TimestampedScheduler
-  // TODO: remove the inflightOperations
-  inflightOperations: Array<
-    [TransactionId, TransactionOperationIndex, TransactionRegisterKey]
-  >
 }
 
 const input = new ConsoleInputChannel()
@@ -38,7 +32,6 @@ const node = new ANode<State>(
     db: DATABASE,
     transactionOperationCounter: 0,
     transactionCounter: 0,
-    inflightOperations: [],
     scheduler: new TimestampedScheduler(DATABASE),
   },
   input,
@@ -51,13 +44,13 @@ node.on(MessageType.Txn, async (node, state, message) => {
     body: { txn, msg_id },
   } = message as Message<MessageBodyTxn>
 
-  node.neighbours.forEach((neighbour) => {
-    node.send(neighbour, {
-      type: MessageType.TxReplicate,
-      txn,
-    })
-  })
-  const result: Array<TransactionAction> = []
+  // node.neighbours.forEach((neighbour) => {
+  //   node.send(neighbour, {
+  //     type: MessageType.TxReplicate,
+  //     txn,
+  //   })
+  // })
+  let result: Array<TransactionAction> = []
   const applyTxn = async (
     transactionId: TransactionId,
     txnActions: Array<TransactionAction>
@@ -65,14 +58,14 @@ node.on(MessageType.Txn, async (node, state, message) => {
     const action = txnActions.shift()
 
     if (action === undefined) {
-      // Remove inflight operations belonging to the transactio that just finished
-      state.inflightOperations = state.inflightOperations.filter(
-        (inflightOperation) => {
-          const txid = inflightOperation[0]
+      const scheduled = await state.scheduler.commit(transactionId)
 
-          return txid !== transactionId
-        }
-      )
+      if (scheduled === 'aborted') {
+        log(`[txn] transaction ${transactionId} aborted on commit ${txn}`)
+        result = []
+        setTimeout(execute, Math.random() * 10, [...txn])
+        return
+      }
 
       log(`[txn] transaction ${transactionId} commit ${txn}`)
       node.send(src, {
@@ -89,27 +82,37 @@ node.on(MessageType.Txn, async (node, state, message) => {
     const operationId = state.transactionOperationCounter
     state.transactionOperationCounter += 1
 
-    const { action: schedulerAction } = await state.scheduler.schedule(
+    const scheduled = await state.scheduler.schedule(
       transactionId,
       key,
       op,
       value
     )
     log(
-      `[txn] scheduler action ${schedulerAction} (tx ${transactionId} ${op} ${key})`
+      `[txn] scheduler action ${scheduled.action} (tx ${transactionId} ${op} ${key})`
     )
 
-    if (schedulerAction === Scheduled.Skip) {
+    if (scheduled.action === Scheduled.Skip) {
+      // We have to include this in the result as from the perspective of the client
+      // the operation executed.
+      //
+      // What I'm not sure about is wether I should return the value set in the action
+      // or the current database value (i.e. te value of the latest write)
+      result.push(action)
       setImmediate(applyTxn, transactionId, txnActions)
       return
     }
 
-    if (schedulerAction === Scheduled.Abort) {
+    if (scheduled.action === Scheduled.Abort) {
+      log(
+        `[txn] abort ${transactionId} reason "${scheduled.reason} ${scheduled.conflictsWith}"`
+      )
       await state.scheduler.abort(transactionId)
       // Schedule it again (another attempt)
       // With setImmediate we can run into a loop with the transaction
       // that caused the abort in the first place
       // setImmediate(execute, [...txn])
+      result = []
       setTimeout(execute, Math.random() * 10, [...txn])
       return
     }
@@ -121,29 +124,22 @@ node.on(MessageType.Txn, async (node, state, message) => {
     if (op === TransactionOperation.Read) {
       result.push([op, key, state.db[key] ?? null])
     } else {
-      /**
-       * Note that we only keep "write" operations in the in-flight array. We
-       * are only looking for write-write cycles
-       */
-      state.inflightOperations.push([transactionId, operationId, key])
       state.db[key] = value
-
-      if (hasWriteWrite(state.inflightOperations)) {
-        log(
-          `[txn] write-write cycle ${JSON.stringify(state.inflightOperations)}`
-        )
-      }
 
       result.push(action)
     }
 
-    // state.transactionOperationCounter += 1
     setImmediate(applyTxn, transactionId, txnActions)
   }
 
+  const ids: Array<TransactionId> = []
   const execute = async (actions: Array<TransactionAction>) => {
     const transactionId = state.transactionCounter
     state.transactionCounter += 1
+
+    ids.push(transactionId)
+
+    log(`[txn] execute ${ids}`)
 
     await state.scheduler.register(transactionId)
 
@@ -165,13 +161,6 @@ node.on(MessageType.TxReplicate, (_node, state, message) => {
     const action = txn.shift()
 
     if (action === undefined) {
-      state.inflightOperations = state.inflightOperations.filter(
-        (inflightOperation) => {
-          const txid = inflightOperation[0]
-
-          return txid !== transactionId
-        }
-      )
       return
     }
 
@@ -184,16 +173,7 @@ node.on(MessageType.TxReplicate, (_node, state, message) => {
     log(
       `[txn] msg_id ${msg_id} src ${src} apply ${action} (tx ${transactionId} op ${operationId})`
     )
-    /**
-     * Note that we only keep "write" operations in the in-flight array. We
-     * are only looking for write-write cycles
-     */
-    state.inflightOperations.push([transactionId, operationId, key])
     state.db[key] = value
-
-    if (hasWriteWrite(state.inflightOperations)) {
-      log(`[txn] write-write cycle ${JSON.stringify(state.inflightOperations)}`)
-    }
 
     state.transactionOperationCounter += 1
     setImmediate(applyTxn, txn)
