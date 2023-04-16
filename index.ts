@@ -148,9 +148,6 @@ function handleTopology(
   state: State,
   message: Message<MessageBodyTopology>
 ): State {
-  /**
-   * See handle init for an explanation as to why this code is commented
-   */
   // const topology = message.body.topology
   // const neighbours = topology[state.node.id]
 
@@ -310,17 +307,3 @@ let state: State | undefined
 
 // stdin is paused by default
 process.stdin.resume()
-process.stdin.on('data', (data) => {
-  if (data) {
-    // log(['recv(string)', data.toString()])
-
-    const messages = data.toString().trim().split('\n')
-    state = messages.reduce((state, message) => {
-      if (message.length > 0) {
-        return handle(JSON.parse(message), state)
-      } else {
-        return state
-      }
-    }, state)
-  }
-})
