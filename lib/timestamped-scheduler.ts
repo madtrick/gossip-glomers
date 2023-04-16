@@ -15,6 +15,7 @@ export enum Scheduled {
 export enum AbortReason {
   ReadUncommited = 'read_uncommited',
   RepeatableRead = 'repeatable_read',
+  DirtyWrite = 'dirty_write',
 }
 
 export type ScheduleAbort = {
@@ -240,7 +241,14 @@ export class TimestampedScheduler {
           conflictsWith: this.timestampToTransactions[registerReadTimestamp],
         }
       } else if (registerWriteTimestamp > transactionTimestamp) {
-        return { action: Scheduled.Skip }
+        log(
+          `[tss] skip (tx ${transactionId} (${this.transactions[transactionId].timestamp}) < tx ${this.timestampToTransactions[registerWriteTimestamp]} (${registerWriteTimestamp}))`
+        )
+        return {
+          action: Scheduled.Abort,
+          reason: AbortReason.DirtyWrite,
+          conflictsWith: this.timestampToTransactions[registerWriteTimestamp],
+        }
       }
 
       this.transactions[transactionId].overwrites.push([

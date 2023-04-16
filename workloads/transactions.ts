@@ -44,12 +44,6 @@ node.on(MessageType.Txn, async (node, state, message) => {
     body: { txn, msg_id },
   } = message as Message<MessageBodyTxn>
 
-  // node.neighbours.forEach((neighbour) => {
-  //   node.send(neighbour, {
-  //     type: MessageType.TxReplicate,
-  //     txn,
-  //   })
-  // })
   let result: Array<TransactionAction> = []
   const applyTxn = async (
     transactionId: TransactionId,
@@ -72,6 +66,12 @@ node.on(MessageType.Txn, async (node, state, message) => {
         type: MessageType.TxnOK,
         txn: result,
         in_reply_to: msg_id,
+      })
+      node.neighbours.forEach((neighbour) => {
+        node.send(neighbour, {
+          type: MessageType.TxReplicate,
+          txn,
+        })
       })
 
       return
@@ -154,30 +154,13 @@ node.on(MessageType.TxReplicate, (_node, state, message) => {
     src,
     body: { txn, msg_id },
   } = message as Message<MessageBodyTxn>
-  const transactionId = state.transactionCounter
-  state.transactionCounter += 1
 
-  const applyTxn = (txn: Array<TransactionAction>) => {
-    const action = txn.shift()
+  txn.forEach((action) => {
+    const [op, key, value] = action
 
-    if (action === undefined) {
-      return
+    if (op === TransactionOperation.Write) {
+      log(`[txn replicate] msg_id ${msg_id} src ${src} apply ${action}`)
+      state.db[key] = value
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [_op, key, value] = action
-
-    const operationId = state.transactionOperationCounter
-    state.transactionOperationCounter += 1
-
-    log(
-      `[txn] msg_id ${msg_id} src ${src} apply ${action} (tx ${transactionId} op ${operationId})`
-    )
-    state.db[key] = value
-
-    state.transactionOperationCounter += 1
-    setImmediate(applyTxn, txn)
-  }
-
-  applyTxn([...txn])
+  })
 })
