@@ -6,49 +6,27 @@ import {
   MessageBodyBroadcast,
   MessageBodyDeliver,
   MessageBodyRead,
-  MessageId,
   MessageType,
 } from '../lib'
 import { ANode } from '../node'
 
 interface State {
   messages: Array<number>
-  outstandingMessages: Array<MessageId>
 }
 
 function broadcast<State>(node: MaelstromNode<State>, value: number): void {
   node.neighbours.forEach((neighbour) => {
-    const retriedDelivery = () => {
-      const timeout = setTimeout(retriedDelivery, 1000)
-
-      node.send(
-        neighbour,
-        {
-          type: MessageType.Deliver,
-          message: value,
-          broadcast_to: node.id,
-        },
-        (_node, _state, reply) => {
-          if (reply.body.type !== MessageType.DeliverOk) {
-            throw new Error('Unexpected message type')
-          }
-
-          clearTimeout(timeout)
-        }
-      )
-    }
-
-    retriedDelivery()
+    node.rpc(neighbour, {
+      type: MessageType.Deliver,
+      message: value,
+      broadcast_to: node.id,
+    })
   })
 }
 
 const input = new ConsoleInputChannel()
 const output = new ConsoleOutputchannel()
-const node = new ANode<State>(
-  { messages: [], outstandingMessages: [] },
-  input,
-  output
-)
+const node = new ANode<State>({ messages: [] }, input, output)
 
 node.on(MessageType.Read, (node, state, message) => {
   node.send(message.src, {
@@ -82,13 +60,6 @@ node.on(MessageType.Deliver, (node, state, message) => {
 
   // TODO: handle re-delivery of the same message
   state.messages.push(deliveredMessage)
-  // node.neighbours.forEach((neighbour) => {
-  //   node.send(neighbour, {
-  //     type: MessageType.Deliver,
-  //     message: deliveredMessage,
-  //     broadcast_to: node.id,
-  //   })
-  // })
   broadcast(node, deliveredMessage)
 
   node.send(message.src, {

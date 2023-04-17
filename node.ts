@@ -26,6 +26,7 @@ export function handleInitMessage<State>(
   } = message
 
   node.id = nodeId
+  // TODO: make the topology configurable
   /**
    * Ignore the topology set by maelstrom and instead set a ring
    *
@@ -102,6 +103,7 @@ export class ANode<State> implements MaelstromNode<State> {
           (data.body as any).msg_id
         }] ${JSON.stringify(data)}`
       )
+      // TODO remove the ts-ignore
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       if (this.pendingRPCs[data.body.in_reply_to]) {
@@ -165,6 +167,8 @@ export class ANode<State> implements MaelstromNode<State> {
     this.messageHandlers[type] = callback
   }
 
+  // TODO: can't I combine the rpc and rpcSync in one method?
+  // to make it sync the caller can await the promise
   rpc(
     dest: MaelstromNodeId,
     data: Record<string, unknown>,
@@ -180,7 +184,7 @@ export class ANode<State> implements MaelstromNode<State> {
       },
     }
 
-    log(`[send] ${JSON.stringify(message)}`)
+    log(`[rpc] ${JSON.stringify(message)}`)
 
     // if (callback) {
     //   this.pendingRPCs[msgId] = callback
@@ -226,18 +230,18 @@ export class ANode<State> implements MaelstromNode<State> {
         this.pendingRPCs[msgId] = {
           callback,
           timeout: setTimeout(() => {
-            log('[sendSync] timeout expired')
+            log('[rpcSync] timeout expired')
             if (this.pendingRPCs[msgId] === undefined) {
-              log('[sendSync] reply received - not retrying')
+              log('[rpcSync] reply received - not retrying')
               return
             }
 
-            log('[sendSync] reply not received - retrying')
+            log('[rpcSync] reply not received - retrying')
             send()
           }, 1000),
         }
 
-        log(`[sendSync] ${JSON.stringify(message)}`)
+        log(`[rpcSync] ${JSON.stringify(message)}`)
         this.nextMessageId += 1
         this.outputChannel.push(message)
       }
