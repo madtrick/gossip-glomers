@@ -201,7 +201,7 @@ export class ANode<State> implements MaelstromNode<State> {
           return
         }
 
-        log('[send] reply not received - retrying')
+        log(`[send] reply not received - retrying ${JSON.stringify(data)}`)
         this.rpc(dest, data, callback)
       }, 1000),
     }
