@@ -52,17 +52,6 @@ export function handleInitMessage<State>(
   return state
 }
 
-// function noopMessageHandler<State>(
-//   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-//   _node: MaelstromNode<State>,
-//   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-//   _state: State,
-//   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-//   _message: Message
-// ): void {
-//   return
-// }
-
 function assertMessage(
   data: unknown
 ): asserts data is Message<TypableMessage<MessageType>> {
