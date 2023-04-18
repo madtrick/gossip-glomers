@@ -54,22 +54,22 @@ node.on(MessageType.Topology, (node, _state, message) => {
   const idNumber = Number(node.id.substring(1))
   const neighbours = []
 
-  if (idNumber % 4 === 0) {
+  if (idNumber % 6 === 0) {
     log(`[topology] node id ${node.id} is head`)
 
-    for (let i = 1; i < 4 && idNumber + i < nodeIds.size; i++) {
+    for (let i = 1; i < 6 && idNumber + i < nodeIds.size; i++) {
       neighbours.push(`n${idNumber + i}`)
     }
 
-    if (idNumber + 4 < nodeIds.size) {
-      neighbours.push(`n${idNumber + 4}`)
+    if (idNumber + 6 < nodeIds.size) {
+      neighbours.push(`n${idNumber + 6}`)
     }
 
-    if (idNumber - 4 >= 0) {
-      neighbours.push(`n${idNumber - 4}`)
+    if (idNumber - 6 >= 0) {
+      neighbours.push(`n${idNumber - 6}`)
     }
   } else {
-    const offset = idNumber % 4
+    const offset = idNumber % 6
     neighbours.push(`n${idNumber - offset}`)
   }
 
