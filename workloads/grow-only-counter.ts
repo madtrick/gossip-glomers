@@ -2,7 +2,6 @@ import {
   ConsoleInputChannel,
   ConsoleOutputchannel,
   log,
-  MaelstromNode,
   Message,
   MessageBodyAdd,
   MessageBodyInit,
@@ -24,50 +23,6 @@ const input = new ConsoleInputChannel()
 const output = new ConsoleOutputchannel()
 const node = new ANode<State>({ counter: 0 }, input, output)
 
-async function updateCounter<State>(
-  node: MaelstromNode<State>,
-  delta: number
-): Promise<void> {
-  /**
-   * IMPORTANT: await here doesn't prevent the node from receiving and
-   * handling other messages
-   */
-  const reply = await node.rpcSync(KVID, {
-    type: MessageType.KVRead,
-    key: KVKEY,
-  })
-  const readMessage = reply as Message<MessageBodyKVReadOk<number>>
-
-  log(
-    `[update value] ${readMessage.body.value} / ${
-      readMessage.body.value + delta
-    }`
-  )
-
-  let casReply = await node.rpcSync(KVID, {
-    type: MessageType.KVCas,
-    key: KVKEY,
-    from: readMessage.body.value,
-    to: readMessage.body.value + delta,
-  })
-
-  while (casReply.body.type === MessageType.Error) {
-    const reply = await node.rpcSync(KVID, {
-      type: MessageType.KVRead,
-      key: KVKEY,
-    })
-    const readMessage = reply as Message<MessageBodyKVReadOk<number>>
-
-    casReply = await node.rpcSync(KVID, {
-      type: MessageType.KVCas,
-      key: KVKEY,
-      from: readMessage.body.value,
-      to: readMessage.body.value + delta,
-    })
-  }
-  // } while (casReply.body.type === MessageType.Error)
-}
-
 node.on(MessageType.Init, async (node, _state, message) => {
   const initMessage = message as Message<MessageBodyInit>
   const {
@@ -76,6 +31,11 @@ node.on(MessageType.Init, async (node, _state, message) => {
 
   node.id = nodeId
 
+  /**
+   * We don't care if this calls fails because the value has already
+   * been initialized by another node. We could make it more efficient
+   * by assigning the initialization task to just one node
+   */
   node.send(KVID, {
     type: MessageType.KVCas,
     key: KVKEY,
@@ -126,7 +86,43 @@ node.on(MessageType.Add, async (node, state, message) => {
 
   state.counter += delta
   log(`[counter] ${state.counter}`)
-  await updateCounter(node, delta)
+  /**
+   * IMPORTANT: await here doesn't prevent the node from receiving and
+   * handling other messages
+   */
+  const reply = await node.rpcSync(KVID, {
+    type: MessageType.KVRead,
+    key: KVKEY,
+  })
+  const readMessage = reply as Message<MessageBodyKVReadOk<number>>
+
+  log(
+    `[update value] ${readMessage.body.value} / ${
+      readMessage.body.value + delta
+    }`
+  )
+
+  let casReply = await node.rpcSync(KVID, {
+    type: MessageType.KVCas,
+    key: KVKEY,
+    from: readMessage.body.value,
+    to: readMessage.body.value + delta,
+  })
+
+  while (casReply.body.type === MessageType.Error) {
+    const reply = await node.rpcSync(KVID, {
+      type: MessageType.KVRead,
+      key: KVKEY,
+    })
+    const readMessage = reply as Message<MessageBodyKVReadOk<number>>
+
+    casReply = await node.rpcSync(KVID, {
+      type: MessageType.KVCas,
+      key: KVKEY,
+      from: readMessage.body.value,
+      to: readMessage.body.value + delta,
+    })
+  }
 
   node.send(addMessage.src, {
     type: MessageType.AddOk,
