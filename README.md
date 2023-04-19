@@ -4,15 +4,15 @@ This repo host the solutions to the distributed systems that
 [Fly.io](https://fly.io/blog/gossip-glomers/) created. The 6 gossip glomers are
 covered in the repo:
 
-- An [echo server](./workloads/echo.ts) https://fly.io/dist-sys/1/
+- An [echo server](./workloads/echo.ts) (exercise https://fly.io/dist-sys/1/)
 - A totally available [unique id generation service](./workloads/unique-ids.ts)
-  https://fly.io/dist-sys/2/
-- [Message broadcasting](./workloads/broadcast.ts) https://fly.io/dist-sys/3a/
+  (exercise https://fly.io/dist-sys/2/)
+- [Message broadcasting](./workloads/broadcast.ts) (exercise https://fly.io/dist-sys/3a/)
 - A [grow only counter](./workloads/grow-only-counter.ts)
-  https://fly.io/dist-sys/4/
-- A [kafka-like log](./workloads/kafka-log.ts) https://fly.io/dist-sys/5a/
+  (exercise https://fly.io/dist-sys/4/)
+- A [kafka-like log](./workloads/kafka-log.ts) (exercise https://fly.io/dist-sys/5a/)
 - A [totally available database](./workloads/transactions.ts)
-  https://fly.io/dist-sys/6a/
+  (exercise https://fly.io/dist-sys/6a/)
 
 ## Notes
 
