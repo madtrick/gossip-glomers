@@ -19,7 +19,8 @@ import { ANode } from '../node'
 
 type State = unknown
 
-const KVID = 'lin-kv'
+const LIN_KVID = 'lin-kv'
+const SEQ_KVID = 'seq-kv'
 
 const input = new ConsoleInputChannel()
 const output = new ConsoleOutputchannel()
@@ -44,7 +45,7 @@ node.on(MessageType.Send, async (node, _state, message) => {
     body: { key, msg, msg_id },
   } = message as Message<MessageBodyKafkaSend>
 
-  const reply = await node.rpcSync(KVID, {
+  const reply = await node.rpc(SEQ_KVID, {
     type: MessageType.KVRead,
     key,
   })
@@ -53,7 +54,7 @@ node.on(MessageType.Send, async (node, _state, message) => {
 
   if (isErrorMessage(reply)) {
     if (reply.body.code === ErrorTypes.KeyDoesNotExist) {
-      await node.rpcSync(KVID, {
+      await node.rpc(SEQ_KVID, {
         type: MessageType.KVCas,
         key,
         to: [],
@@ -72,7 +73,7 @@ node.on(MessageType.Send, async (node, _state, message) => {
   }
 
   let offset = currentOffset
-  let casReply = await node.rpcSync(KVID, {
+  let casReply = await node.rpc(SEQ_KVID, {
     type: MessageType.KVCas,
     key,
     from: currentLog,
@@ -80,13 +81,13 @@ node.on(MessageType.Send, async (node, _state, message) => {
   })
 
   while (isErrorMessage(casReply)) {
-    const reply = await node.rpcSync(KVID, {
+    const reply = await node.rpc(SEQ_KVID, {
       type: MessageType.KVRead,
       key,
     })
     const readMessage = reply as Message<MessageBodyKVReadOk<KafkaLog>>
     currentLog = readMessage.body.value
-    casReply = await node.rpcSync(KVID, {
+    casReply = await node.rpc(SEQ_KVID, {
       type: MessageType.KVCas,
       key,
       from: currentLog,
@@ -113,7 +114,7 @@ node.on(MessageType.Poll, async (_node, _state, message) => {
 
   for (const key in offsets) {
     const offset = offsets[key]
-    const reply = await node.rpcSync(KVID, {
+    const reply = await node.rpc(SEQ_KVID, {
       type: MessageType.KVRead,
       key,
     })
@@ -160,7 +161,7 @@ node.on(MessageType.CommitOffsets, async (node, _state, message) => {
   for (const key in offsets) {
     const offset = offsets[key]
 
-    await node.rpcSync(KVID, {
+    await node.rpc(LIN_KVID, {
       // TODO: use `cas`
       type: MessageType.KVWrite,
       key: `${key}-committed-offset`,
@@ -183,7 +184,7 @@ node.on(MessageType.ListCommittedOffsets, async (node, _state, message) => {
   const offsets: Record<KakfkaLogKey, KakfkaLogOffset> = {}
 
   for (const key of keys) {
-    const reply = await node.rpcSync(KVID, {
+    const reply = await node.rpc(LIN_KVID, {
       type: MessageType.KVRead,
       key: `${key}-committed-offset`,
     })

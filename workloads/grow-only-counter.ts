@@ -57,13 +57,13 @@ node.on(MessageType.Read, async (node, _state, message) => {
   let replyReadMessage: Message<MessageBodyKVReadOk<number>>
 
   do {
-    const replyRead = await node.rpcSync(KVID, {
+    const replyRead = await node.rpc(KVID, {
       type: MessageType.KVRead,
       key: KVKEY,
     })
     replyReadMessage = replyRead as Message<MessageBodyKVReadOk<number>>
 
-    casReply = await node.rpcSync(KVID, {
+    casReply = await node.rpc(KVID, {
       type: MessageType.KVCas,
       key: KVKEY,
       from: replyReadMessage.body.value,
@@ -90,7 +90,7 @@ node.on(MessageType.Add, async (node, state, message) => {
    * IMPORTANT: await here doesn't prevent the node from receiving and
    * handling other messages
    */
-  const reply = await node.rpcSync(KVID, {
+  const reply = await node.rpc(KVID, {
     type: MessageType.KVRead,
     key: KVKEY,
   })
@@ -102,7 +102,7 @@ node.on(MessageType.Add, async (node, state, message) => {
     }`
   )
 
-  let casReply = await node.rpcSync(KVID, {
+  let casReply = await node.rpc(KVID, {
     type: MessageType.KVCas,
     key: KVKEY,
     from: readMessage.body.value,
@@ -110,13 +110,13 @@ node.on(MessageType.Add, async (node, state, message) => {
   })
 
   while (casReply.body.type === MessageType.Error) {
-    const reply = await node.rpcSync(KVID, {
+    const reply = await node.rpc(KVID, {
       type: MessageType.KVRead,
       key: KVKEY,
     })
     const readMessage = reply as Message<MessageBodyKVReadOk<number>>
 
-    casReply = await node.rpcSync(KVID, {
+    casReply = await node.rpc(KVID, {
       type: MessageType.KVCas,
       key: KVKEY,
       from: readMessage.body.value,

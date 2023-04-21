@@ -156,50 +156,12 @@ export class ANode<State> implements MaelstromNode<State> {
     this.messageHandlers[type] = callback
   }
 
-  // TODO: can't I combine the rpc and rpcSync in one method?
-  // to make it sync the caller can await the promise
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rpc(
     dest: MaelstromNodeId,
     data: Record<string, unknown>,
-    callback?: MessageHandler<State>
-  ): void {
-    const msgId = this.nextMessageId
-    const message = {
-      dest,
-      src: this.id,
-      body: {
-        msg_id: msgId,
-        ...data,
-      },
-    }
-
-    log(`[rpc] ${JSON.stringify(message)}`)
-
-    // if (callback) {
-    //   this.pendingRPCs[msgId] = callback
-    // }
-    this.pendingRPCs[msgId] = {
-      callback,
-      timeout: setTimeout(() => {
-        log('[send] timeout expired')
-        if (this.pendingRPCs[msgId] === undefined) {
-          // TODO: is this case even posible. If the reply has been received
-          // and this value set to `undefined` then the timout must have been
-          // cleared too
-          log('[send] reply received - not retrying')
-          return
-        }
-
-        log(`[send] reply not received - retrying ${JSON.stringify(data)}`)
-        this.rpc(dest, data, callback)
-      }, 1000),
-    }
-    this.nextMessageId += 1
-    this.outputChannel.push(message)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  rpcSync(dest: MaelstromNodeId, data: Record<string, unknown>): Promise<any> {
+    options: { noresponse: boolean } = { noresponse: false }
+  ): Promise<any> {
     return new Promise((resolve) => {
       const callback: MessageHandler<State> = (_node, _state, message) => {
         resolve(message)
@@ -216,21 +178,23 @@ export class ANode<State> implements MaelstromNode<State> {
           },
         }
 
-        this.pendingRPCs[msgId] = {
-          callback,
-          timeout: setTimeout(() => {
-            log('[rpcSync] timeout expired')
-            if (this.pendingRPCs[msgId] === undefined) {
-              log('[rpcSync] reply received - not retrying')
-              return
-            }
+        if (!options.noresponse) {
+          this.pendingRPCs[msgId] = {
+            callback,
+            timeout: setTimeout(() => {
+              log('[rpc] timeout expired')
+              if (this.pendingRPCs[msgId] === undefined) {
+                log('[rpc] reply received - not retrying')
+                return
+              }
 
-            log('[rpcSync] reply not received - retrying')
-            send()
-          }, 1000),
+              log('[rpc] reply not received - retrying')
+              send()
+            }, 1000),
+          }
         }
 
-        log(`[rpcSync] ${JSON.stringify(message)}`)
+        log(`[rpc] ${JSON.stringify(message)}`)
         this.nextMessageId += 1
         this.outputChannel.push(message)
       }
@@ -239,20 +203,10 @@ export class ANode<State> implements MaelstromNode<State> {
     })
   }
 
-  send(dest: MaelstromNodeId, data: Record<string, unknown>) {
-    const msgId = this.nextMessageId
-    const message = {
-      dest,
-      src: this.id,
-      body: {
-        msg_id: msgId,
-        ...data,
-      },
-    }
-
-    log(`[send] ${JSON.stringify(message)}`)
-
-    this.nextMessageId += 1
-    this.outputChannel.push(message)
+  async send(
+    dest: MaelstromNodeId,
+    data: Record<string, unknown>
+  ): Promise<void> {
+    this.rpc(dest, data, { noresponse: true })
   }
 }

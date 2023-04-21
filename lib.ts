@@ -217,16 +217,15 @@ export interface MaelstromNode<State> {
   neighbours: Array<MaelstromNodeId>
   state: State
   on: (type: MessageType, handler: MessageHandler<State>) => void
-  send: (dest: MaelstromNodeId, message: Record<string, unknown>) => void
+  send: (
+    dest: MaelstromNodeId,
+    message: Record<string, unknown>
+  ) => Promise<void>
   rpc: (
     dest: MaelstromNodeId,
     message: Record<string, unknown>,
-    callback?: MessageHandler<State>
-  ) => void
-  rpcSync: (
-    dest: MaelstromNodeId,
-    message: Record<string, unknown>
-  ) => Promise<Message<TypableMessage>>
+    options?: { noresponse: boolean }
+  ) => Promise<any>
 }
 
 export interface State {

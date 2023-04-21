@@ -28,7 +28,7 @@ function broadcast<State>(
       return
     }
 
-    node.rpc(neighbour, {
+    node.send(neighbour, {
       type: MessageType.Deliver,
       message: value,
       broadcast_to: broadcastTo,
@@ -82,6 +82,7 @@ node.on(MessageType.Topology, (node, _state, message) => {
     in_reply_to: body.msg_id,
   })
 })
+
 node.on(MessageType.Read, (node, state, message) => {
   node.send(message.src, {
     type: MessageType.ReadOk,
