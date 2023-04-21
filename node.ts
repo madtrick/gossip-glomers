@@ -92,6 +92,11 @@ export class ANode<State> implements MaelstromNode<State> {
           (data.body as any).msg_id
         }] ${JSON.stringify(data)}`
       )
+      /**
+       * When a message is received and that message is a reply
+       * to a message sent from this node, we clear the timeout
+       * so we don't retry the delivery again
+       */
       // TODO remove the ts-ignore
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
