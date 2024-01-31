@@ -63,6 +63,17 @@ export interface ReplyMessage {
   in_reply_to: MessageId
 }
 
+export function messageIsReply(
+  message: Message<unknown>
+): message is Message<ReplyMessage> {
+  return (
+    message &&
+    typeof message.body === 'object' &&
+    message.body !== null &&
+    'in_reply_to' in message.body
+  )
+}
+
 export interface MessageBodyInit extends TypableMessage<MessageType.Init> {
   msg_id: MessageId
   node_id: MaelstromNodeId

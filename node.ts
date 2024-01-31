@@ -9,6 +9,7 @@ import {
   MessageBodyTopology,
   MessageHandler,
   MessageId,
+  messageIsReply,
   MessageType,
   OutputChannel,
   ReplyMessage,
@@ -26,7 +27,6 @@ export function handleInitMessage<State>(
   } = message
 
   node.id = nodeId
-  // TODO: make the topology configurable
   /**
    * Ignore the topology set by maelstrom and instead set a ring
    *
@@ -97,12 +97,7 @@ export class ANode<State> implements MaelstromNode<State> {
        * to a message sent from this node, we clear the timeout
        * so we don't retry the delivery again
        */
-      // TODO remove the ts-ignore
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      if (this.pendingRPCs[data.body.in_reply_to]) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
+      if (messageIsReply(data) && this.pendingRPCs[data.body.in_reply_to]) {
         const callback = this.pendingRPCs[data.body.in_reply_to].callback
         callback && callback(this, this.state, data)
 
@@ -110,8 +105,7 @@ export class ANode<State> implements MaelstromNode<State> {
           this.pendingRPCs[(data.body as unknown as ReplyMessage).in_reply_to]
             .timeout
         )
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
+
         delete this.pendingRPCs[data.body.in_reply_to]
       } else {
         const messageType: MessageType = data.body.type

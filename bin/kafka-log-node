@@ -1,1 +1,1 @@
-npx ts-node /Users/farrucosanjurjo/repos/gossip-glomers/workloads/kafka-log.ts
+npx ts-node /Users/farrucosanjurjo/repos/personal/gossip-glomers/workloads/kafka-log.ts
